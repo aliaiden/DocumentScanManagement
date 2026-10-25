@@ -52,6 +52,22 @@ class DocuScanApp {
     }, 3500);
   }
 
+  async getApiErrorMessage(response, fallback) {
+    const body = await response.text();
+    if (!body) return `${fallback} (HTTP ${response.status})`;
+
+    try {
+      const error = JSON.parse(body);
+      const detail = error.detail || error.message;
+      if (detail) {
+        return typeof detail === "string" ? detail : JSON.stringify(detail);
+      }
+    } catch (e) {
+      // Non-JSON server errors should still be shown as server errors, not network failures.
+    }
+    return body.slice(0, 300);
+  }
+
   // ============================================================================
   // Cloud & System Status
   // ============================================================================
@@ -216,6 +232,9 @@ class DocuScanApp {
       if (res.ok) {
         this.currentPerson = await res.json();
         this.renderPersonDossier();
+      } else {
+        const message = await this.getApiErrorMessage(res, "Failed to load person dossier");
+        this.showToast(message, true);
       }
     } catch (e) {
       this.showToast("Failed to load person dossier", true);
@@ -740,9 +759,9 @@ class DocuScanApp {
         // Refresh project details
         await this.showProjectDetail(this.currentProject.id);
       } else {
-        const err = await res.json();
-        this.showToast(err.detail || "Error processing scans", true);
-        statusText.innerText = err.detail || "Error occurred";
+        const message = await this.getApiErrorMessage(res, "Error processing scans");
+        this.showToast(message, true);
+        statusText.innerText = message;
       }
     } catch (e) {
       this.showToast("Network error uploading batch scans", true);
@@ -955,6 +974,9 @@ class DocuScanApp {
     const modal = document.getElementById("modal-batch-upload");
     if (!modal) return;
     this.stagedAdditionalFiles = [];
+    document.querySelectorAll("#modal-batch-upload input[type='file']").forEach(input => {
+      input.value = "";
+    });
     this.renderStagedAdditionalFiles();
     document.getElementById("batch-additional-status").innerText = "";
     modal.classList.remove("hidden");
@@ -988,6 +1010,9 @@ class DocuScanApp {
     }
 
     this.renderStagedAdditionalFiles();
+    document.querySelectorAll("#modal-batch-upload input[type='file']").forEach(input => {
+      input.value = "";
+    });
   }
 
   renderStagedAdditionalFiles() {
@@ -1029,7 +1054,11 @@ class DocuScanApp {
 
   async handleSaveAdditionalBatch(event) {
     event.preventDefault();
-    if (!this.currentPerson || this.stagedAdditionalFiles.length === 0) {
+    if (!this.currentPerson) {
+      this.showToast("Open Upload Additional Scans from a person's dossier and retry.", true);
+      return;
+    }
+    if (this.stagedAdditionalFiles.length === 0) {
       this.showToast("Please choose at least one scan picture", true);
       return;
     }
@@ -1059,8 +1088,8 @@ class DocuScanApp {
         this.showToast("Batch documents uploaded and analyzed!");
         await this.showPersonDossier(this.currentPerson.id);
       } else {
-        const err = await res.json();
-        this.showToast(err.detail || "Error uploading batch", true);
+        const message = await this.getApiErrorMessage(res, "Error uploading batch");
+        this.showToast(message, true);
       }
     } catch (e) {
       this.showToast("Network error uploading batch", true);

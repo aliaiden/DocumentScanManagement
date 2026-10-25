@@ -11,6 +11,7 @@ Extracts:
 """
 
 import os
+import base64
 import json
 import logging
 import random
@@ -190,26 +191,43 @@ class ContentUnderstandingService:
     def _find_field(cls, fields: Dict[str, Any], candidates: list[str]) -> Any:
         candidate_names = {cls._normalize_field_name(name) for name in candidates}
 
+        def has_value(value: Any) -> bool:
+            return value is not None and value != "" and value != {} and value != []
+
         def search(value: Any) -> Any:
             if isinstance(value, dict):
                 for name, field_value in value.items():
                     if (
                         cls._normalize_field_name(name) in candidate_names
-                        and field_value not in (None, "")
+                        and has_value(field_value)
                     ):
                         return field_value
                 for field_value in value.values():
                     found = search(field_value)
-                    if found not in (None, ""):
+                    if has_value(found):
                         return found
             elif isinstance(value, list):
                 for item in value:
                     found = search(item)
-                    if found not in (None, ""):
+                    if has_value(found):
                         return found
             return None
 
         return search(fields)
+
+    @classmethod
+    def _person_field_text(cls, value: Any) -> Optional[str]:
+        """Convert analyzer values to scalar text suitable for person database columns."""
+        if value is None or value == "" or value == {} or value == []:
+            return None
+        if isinstance(value, dict):
+            parts = [cls._person_field_text(item) for item in value.values()]
+        elif isinstance(value, list):
+            parts = [cls._person_field_text(item) for item in value]
+        else:
+            return str(value)
+        text = ", ".join(part for part in parts if part)
+        return text or None
 
     def _analyze_with_content_understanding_rest(
         self,
@@ -227,17 +245,20 @@ class ContentUnderstandingService:
         url = f"{base_endpoint}/contentunderstanding/analyzers/{self.analyzer_id}:analyze?api-version={self.api_version}"
 
         with httpx.Client(timeout=45.0) as client:
-            # Send file_url if available and valid URL, otherwise send binary octet-stream
+            # Content Understanding's analyze endpoint accepts JSON inputs, not raw bytes.
             if file_url and file_url.startswith("http"):
-                headers["Content-Type"] = "application/json"
-                response = client.post(url, headers=headers, json={"url": file_url})
+                inputs = [{"url": file_url}]
             else:
-                headers["Content-Type"] = "application/octet-stream"
-                response = client.post(url, headers=headers, content=file_bytes)
+                inputs = [{"data": base64.b64encode(file_bytes).decode("ascii")}]
 
+            headers["Content-Type"] = "application/json"
+            response = client.post(url, headers=headers, json={"inputs": inputs})
             if response.status_code not in (200, 202):
                 logger.warning(f"Content Understanding POST returned {response.status_code}: {response.text}")
-                return None
+                raise RuntimeError(
+                    f"Azure Content Understanding returned HTTP {response.status_code}: "
+                    f"{response.text[:1000]}"
+                )
 
             result_data = None
             if response.status_code == 200:
@@ -246,23 +267,29 @@ class ContentUnderstandingService:
                 # Poll Operation-Location
                 operation_url = response.headers.get("Operation-Location") or response.headers.get("operation-location")
                 if not operation_url:
-                    return None
+                    raise RuntimeError(
+                        "Azure Content Understanding accepted the request but omitted Operation-Location."
+                    )
 
-                for _ in range(25):
+                for _ in range(120):
                     time.sleep(1.0)
                     poll_res = client.get(operation_url, headers=self._get_auth_headers())
                     if poll_res.status_code == 200:
                         poll_json = poll_res.json()
-                        st = poll_json.get("status")
+                        st = str(poll_json.get("status", "")).lower()
                         if st == "succeeded":
                             result_data = poll_json.get("result", poll_json)
                             break
                         elif st == "failed":
                             logger.warning(f"Content Understanding operation failed: {poll_json}")
-                            return None
+                            raise RuntimeError(
+                                f"Azure Content Understanding operation failed: {poll_json}"
+                            )
 
             if not result_data:
-                return None
+                raise RuntimeError(
+                    "Azure Content Understanding operation did not return a result before polling timed out."
+                )
 
             # Analyze responses can wrap the document contents in a result/data object.
             if isinstance(result_data.get("result"), dict):
@@ -637,13 +664,19 @@ class ContentUnderstandingService:
         """
         name_keys = [
             "CustomerName", "Depositor Name", "Depositor", "Full Name", "Recipient Name",
-            "Student Name", "Applicant Name", "Name", "Subject Person", "Cardholder Name",
+            "CustomerAddressRecipient", "BillingAddressRecipient", "Student Name",
+            "Applicant Name", "Name", "Subject Person", "Cardholder Name",
             "full_name", "person_name", "holder_name", "name_on_document"
         ]
         id_keys = [
             "National ID Number", "Person / Student ID", "ID / Reference No",
             "Identity No", "Certificate ID", "CustomerTaxId", "National ID", "CNIC",
             "ID Number", "national_id", "identity_number", "id_number"
+        ]
+        address_keys = [
+            "CustomerAddress", "BillingAddress", "RemittanceAddress",
+            "ServiceAddress", "ShippingAddress", "Address", "Residential Address",
+            "address"
         ]
         full_name = self._find_field(extracted_fields, name_keys)
         national_id = self._find_field(extracted_fields, id_keys)
@@ -672,10 +705,10 @@ class ContentUnderstandingService:
             person_type = None
 
         def extracted_or_context(keys: list[str], context_key: str) -> Any:
-            value = self._find_field(extracted_fields, keys)
-            if value not in (None, ""):
+            value = self._person_field_text(self._find_field(extracted_fields, keys))
+            if value is not None:
                 return value
-            return (person_context or {}).get(context_key)
+            return self._person_field_text((person_context or {}).get(context_key))
 
         return {
             "full_name": extracted_or_context(name_keys, "full_name"),
@@ -686,7 +719,7 @@ class ContentUnderstandingService:
             ),
             "email": extracted_or_context(["Email", "Email Address", "email_address"], "email"),
             "phone": extracted_or_context(["Phone", "Phone Number", "Telephone", "phone_number"], "phone"),
-            "address": extracted_or_context(["Address", "Residential Address", "address"], "address"),
+            "address": extracted_or_context(address_keys, "address"),
         }
 
     def get_status(self) -> dict:

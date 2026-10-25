@@ -4,7 +4,7 @@ Pydantic Schemas for Request & Response Serialization
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 # ==============================================================================
@@ -19,6 +19,27 @@ class ExtractedPersonOut(BaseModel):
     phone: Optional[str] = Field(None, description="Phone number detected on document")
     address: Optional[str] = Field(None, description="Physical address detected on document")
     confidence: Optional[float] = Field(None, description="Extraction confidence score (0 to 1)")
+
+    @field_validator(
+        "full_name", "national_id", "person_type", "date_of_birth",
+        "email", "phone", "address",
+        mode="before",
+    )
+    @classmethod
+    def normalize_text_values(cls, value):
+        def to_text(item):
+            if item is None or item == "":
+                return None
+            if isinstance(item, dict):
+                parts = [to_text(child) for child in item.values()]
+            elif isinstance(item, list):
+                parts = [to_text(child) for child in item]
+            else:
+                return str(item)
+            text = ", ".join(part for part in parts if part)
+            return text or None
+
+        return to_text(value)
 
 
 class DocumentAnalysisBase(BaseModel):
