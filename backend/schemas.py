@@ -18,7 +18,7 @@ class ExtractedPersonOut(BaseModel):
     email: Optional[str] = Field(None, description="Email detected on document")
     phone: Optional[str] = Field(None, description="Phone number detected on document")
     address: Optional[str] = Field(None, description="Physical address detected on document")
-    confidence: Optional[float] = Field(0.95, description="Extraction confidence score (0 to 1)")
+    confidence: Optional[float] = Field(None, description="Extraction confidence score (0 to 1)")
 
 
 class DocumentAnalysisBase(BaseModel):

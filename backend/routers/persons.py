@@ -137,15 +137,24 @@ async def scan_and_auto_extract_person(
     )
 
     extracted_person = initial_analysis.get("extracted_person", {})
-    auto_name = full_name or extracted_person.get("full_name") or "Sarah Jenkins"
-    auto_id = national_id or extracted_person.get("national_id") or "42101-9876543-2"
+    auto_name = full_name or extracted_person.get("full_name")
+    auto_id = national_id or extracted_person.get("national_id")
+    if not auto_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "The document analysis did not identify a person's name. "
+                "Upload a clearer image or provide full_name and retry."
+            )
+        )
+
     auto_type = person_type or extracted_person.get("person_type")
     if not auto_type or auto_type not in (project.person_types or []):
         auto_type = project.person_types[0] if project.person_types else "Applicant"
-    auto_dob = date_of_birth or extracted_person.get("date_of_birth") or "1998-05-14"
-    auto_email = email or extracted_person.get("email") or f"{auto_name.lower().replace(' ', '.')}@example.com"
-    auto_phone = phone or extracted_person.get("phone") or "+1 (555) 234-5678"
-    auto_address = address or extracted_person.get("address") or "Auto-extracted via Azure Content Understanding"
+    auto_dob = date_of_birth or extracted_person.get("date_of_birth")
+    auto_email = email or extracted_person.get("email")
+    auto_phone = phone or extracted_person.get("phone")
+    auto_address = address or extracted_person.get("address")
 
     # 2. Get or create Person record in Azure SQL Server
     person = None
@@ -154,7 +163,8 @@ async def scan_and_auto_extract_person(
 
     if not person:
         # Check if person with same national_id already exists in this project
-        person = db.query(Person).filter(Person.project_id == project_id, Person.national_id == auto_id).first()
+        if auto_id:
+            person = db.query(Person).filter(Person.project_id == project_id, Person.national_id == auto_id).first()
 
     if not person:
         person = Person(
@@ -166,7 +176,7 @@ async def scan_and_auto_extract_person(
             phone=auto_phone,
             date_of_birth=auto_dob,
             address=auto_address,
-            notes=notes or f"Person profile auto-extracted by Azure Content Understanding from scanned {primary_doc['category']}."
+            notes=notes or f"Person profile created from an uploaded {primary_doc['category']} document."
         )
         db.add(person)
         db.commit()

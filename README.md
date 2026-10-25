@@ -177,6 +177,10 @@ The app starts at **http://localhost:8000**
 }
 ```
 
+#### Extraction accuracy notes
+
+The configured Content Understanding analyzer must define fields for the document types being uploaded; an invoice analyzer may not extract identity-card or certificate fields unless its schema includes them. Azure typed values, nested objects, arrays, and OCR markdown are normalized before they are saved and displayed. If a configured Azure analysis fails, the app reports a failed analysis instead of substituting sample names, IDs, dates, or contact details. Existing document analyses are not recalculated automatically; use **Re-analyze** on each document to refresh its saved result.
+
 ### AI Agent
 
 | Method | Endpoint | Description |

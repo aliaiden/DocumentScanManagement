@@ -593,6 +593,8 @@ class DocuScanApp {
     select.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join("");
 
     // Reset optional fields
+    const nameEl = document.getElementById("person-form-name");
+    if (nameEl) nameEl.value = "";
     const notesEl = document.getElementById("person-form-notes");
     if (notesEl) notesEl.value = "";
     document.getElementById("person-save-status").innerText = "";
@@ -710,8 +712,9 @@ class DocuScanApp {
     statusText.innerText = "Azure Content Understanding is analyzing documents and extracting person details...";
 
     const formData = new FormData();
-    // Only pass person_type and optional notes — all other details extracted from docs
     formData.append("person_type", document.getElementById("person-form-type").value);
+    const fullName = document.getElementById("person-form-name")?.value?.trim();
+    if (fullName) formData.append("full_name", fullName);
     const notes = document.getElementById("person-form-notes")?.value?.trim();
     if (notes) formData.append("notes", notes);
 
@@ -1107,8 +1110,10 @@ class DocuScanApp {
     const fields = an.extracted_fields || {};
     // Don't display the nested extracted_person object as a raw field — handled separately
     const displayFields = Object.entries(fields).filter(([k]) => k !== "extracted_person");
-    if (displayFields.length === 0) {
-      table.innerHTML = `<div class="p-3 text-slate-500 italic">No structured key-values detected.</div>`;
+    if (an.status === "failed") {
+      table.innerHTML = `<div class="p-3 text-amber-300">Azure analysis failed; no extracted values are available. Check the analyzer configuration and re-analyze this document.</div>`;
+    } else if (displayFields.length === 0) {
+      table.innerHTML = `<div class="p-3 text-slate-500 italic">The analyzer returned no structured fields. Review the OCR text or configure an analyzer for this document type.</div>`;
     } else {
       table.innerHTML = displayFields.map(([k, v]) => `
         <div class="flex items-start justify-between p-2.5">

@@ -412,7 +412,7 @@
       <div class="flex items-center justify-between pb-4 border-b border-slate-800">
         <div>
           <h3 class="text-lg font-bold text-white">Upload Document Scans</h3>
-          <p class="text-xs text-slate-400 mt-0.5">Person details are automatically extracted from uploaded document images by Azure AI.</p>
+          <p class="text-xs text-slate-400 mt-0.5">Azure AI extracts person details; you can enter the name if it is not readable from the scan.</p>
         </div>
         <button onclick="app.closeAddPersonModal()" class="text-slate-400 hover:text-white transition">
           <i data-lucide="x" class="w-5 h-5"></i>
@@ -434,14 +434,19 @@
           </div>
         </div>
 
-        <!-- Person Type + Notes -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- Person Type, optional name fallback, and notes -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Person Type *</label>
             <select id="person-form-type" required
                     class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-azure-500">
               <!-- Populated dynamically -->
             </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1">Name <span class="text-slate-500 font-normal">(optional fallback)</span></label>
+            <input type="text" id="person-form-name" placeholder="Use if the name is unclear in the scan"
+                   class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-white focus:outline-none focus:border-azure-500">
           </div>
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1">Notes / Remarks <span class="text-slate-500 font-normal">(optional)</span></label>

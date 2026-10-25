@@ -14,6 +14,7 @@ import os
 import json
 import logging
 import random
+import re
 import time
 from typing import Dict, Any, Optional
 from PIL import Image
@@ -111,24 +112,104 @@ class ContentUnderstandingService:
         Analyzes a document image using Azure Content Understanding REST API,
         Document Intelligence SDK, or heuristic fallback.
         """
+        azure_error = None
+
         # 1. Try Azure Content Understanding REST API (2025-11-01)
         if self.use_rest_api and self.endpoint:
             try:
                 res = self._analyze_with_content_understanding_rest(file_bytes, filename, category, file_url)
                 if res:
                     return res
+                azure_error = "Azure Content Understanding returned no analysis result."
             except Exception as e:
-                logger.warning(f"Azure Content Understanding REST API call failed: {e}. Trying fallback.")
+                azure_error = str(e)
+                logger.warning("Azure Content Understanding REST API call failed: %s", e)
 
         # 2. Try Azure Document Intelligence SDK if available
         if self.client:
             try:
                 return self._analyze_with_azure(file_bytes, filename, category)
             except Exception as e:
-                logger.error(f"Azure Document Intelligence API failed: {e}. Falling back to intelligent analyzer.")
+                azure_error = str(e)
+                logger.error("Azure Document Intelligence API failed: %s", e)
 
-        # 3. Built-in intelligent analyzer fallback
+        # A configured Azure service failure must not be presented as extracted data.
+        if azure_error:
+            return {
+                "status": "failed",
+                "has_signature": False,
+                "has_stamp": False,
+                "is_handwritten": False,
+                "handwritten_percentage": 0.0,
+                "detected_type": None,
+                "confidence_score": 0.0,
+                "extracted_text": "",
+                "extracted_fields": {},
+                "extracted_person": {},
+                "analysis_raw": {
+                    "provider": "Azure Content Understanding",
+                    "error": azure_error
+                }
+            }
+
+        # 3. Built-in demo analyzer is only used when Azure is not configured.
         return self._analyze_with_heuristic_engine(file_bytes, filename, category, person_context)
+
+    @classmethod
+    def _normalize_field_value(cls, value: Any) -> Any:
+        """Unwrap Azure's typed field values while preserving nested objects and arrays."""
+        if isinstance(value, list):
+            return [cls._normalize_field_value(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        for key in (
+            "valueString", "valueDate", "valueTime", "valueNumber", "valueInteger",
+            "valueBoolean", "valueCountryRegion", "valuePhoneNumber", "valueSelectionMark",
+            "valueSignature", "valueCurrency", "value",
+        ):
+            if key in value:
+                return cls._normalize_field_value(value[key])
+
+        if "valueArray" in value:
+            return cls._normalize_field_value(value["valueArray"])
+        if "valueObject" in value:
+            return cls._normalize_field_value(value["valueObject"])
+
+        return {
+            key: cls._normalize_field_value(item)
+            for key, item in value.items()
+            if key not in {"type", "confidence", "spans", "boundingRegions"}
+        }
+
+    @staticmethod
+    def _normalize_field_name(name: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", name.lower())
+
+    @classmethod
+    def _find_field(cls, fields: Dict[str, Any], candidates: list[str]) -> Any:
+        candidate_names = {cls._normalize_field_name(name) for name in candidates}
+
+        def search(value: Any) -> Any:
+            if isinstance(value, dict):
+                for name, field_value in value.items():
+                    if (
+                        cls._normalize_field_name(name) in candidate_names
+                        and field_value not in (None, "")
+                    ):
+                        return field_value
+                for field_value in value.values():
+                    found = search(field_value)
+                    if found not in (None, ""):
+                        return found
+            elif isinstance(value, list):
+                for item in value:
+                    found = search(item)
+                    if found not in (None, ""):
+                        return found
+            return None
+
+        return search(fields)
 
     def _analyze_with_content_understanding_rest(
         self,
@@ -183,19 +264,34 @@ class ContentUnderstandingService:
             if not result_data:
                 return None
 
+            # Analyze responses can wrap the document contents in a result/data object.
+            if isinstance(result_data.get("result"), dict):
+                result_data = result_data["result"]
+            elif isinstance(result_data.get("data"), dict) and "contents" in result_data["data"]:
+                result_data = result_data["data"]
+
             # Parse results from Azure Content Understanding
             extracted_text = ""
             extracted_fields = {}
             contents = result_data.get("contents", [])
+            if isinstance(contents, dict):
+                contents = [contents]
             for c in contents:
-                if "markdown" in c and c["markdown"]:
-                    extracted_text += c["markdown"] + "\n"
-                fields = c.get("fields", {})
+                if not isinstance(c, dict):
+                    continue
+                markdown = c.get("markdown") or c.get("text")
+                if markdown:
+                    extracted_text += str(markdown) + "\n"
+                fields = c.get("fields") or {}
+                if not isinstance(fields, dict):
+                    continue
                 for f_name, f_info in fields.items():
-                    if isinstance(f_info, dict):
-                        extracted_fields[f_name] = f_info.get("value", f_info.get("content", str(f_info)))
-                    else:
-                        extracted_fields[f_name] = str(f_info)
+                    extracted_fields[f_name] = self._normalize_field_value(f_info)
+
+            if not extracted_text and isinstance(result_data.get("markdown"), str):
+                extracted_text = result_data["markdown"]
+            if not extracted_text and isinstance(result_data.get("content"), str):
+                extracted_text = result_data["content"]
 
             text_lower = (extracted_text + " " + json.dumps(extracted_fields)).lower()
 
@@ -207,7 +303,8 @@ class ContentUnderstandingService:
 
             # Extract person details from analyzer output
             extracted_person = self._extract_person_from_data(extracted_fields, extracted_text, category, filename)
-            extracted_fields["extracted_person"] = extracted_person
+            if any(value for key, value in extracted_person.items() if key != "confidence"):
+                extracted_fields["extracted_person"] = extracted_person
 
             return {
                 "status": "completed",
@@ -284,7 +381,8 @@ class ContentUnderstandingService:
                             extracted_fields[field_name] = field_val.content
 
         extracted_person = self._extract_person_from_data(extracted_fields, extracted_text, category, filename)
-        extracted_fields["extracted_person"] = extracted_person
+        if any(value for key, value in extracted_person.items() if key != "confidence"):
+            extracted_fields["extracted_person"] = extracted_person
 
         return {
             "status": "completed",
@@ -537,52 +635,24 @@ class ContentUnderstandingService:
         """
         Extracts person identity information directly from the output of the image analyzer.
         """
-        # If person context was provided, respect it
-        if person_context and person_context.get("full_name"):
-            full_name = person_context["full_name"]
-            national_id = person_context.get("national_id") or f"ID-{abs(hash(full_name)) % 10000000:07d}"
-            person_type = person_context.get("person_type") or "Applicant"
-            dob = person_context.get("date_of_birth") or "1998-05-14"
-            email = person_context.get("email") or f"{full_name.lower().replace(' ', '.')}@example.com"
-            phone = person_context.get("phone") or "+1 (555) 234-5678"
-            address = person_context.get("address") or "Identified via Document Scan"
-            return {
-                "full_name": full_name,
-                "national_id": national_id,
-                "person_type": person_type,
-                "date_of_birth": dob,
-                "email": email,
-                "phone": phone,
-                "address": address,
-                "confidence": 0.96
-            }
-
-        # Otherwise extract from fields
         name_keys = [
             "CustomerName", "Depositor Name", "Depositor", "Full Name", "Recipient Name",
-            "Student Name", "Applicant Name", "Name", "Subject Person", "Cardholder Name"
+            "Student Name", "Applicant Name", "Name", "Subject Person", "Cardholder Name",
+            "full_name", "person_name", "holder_name", "name_on_document"
         ]
-        full_name = None
-        for k in name_keys:
-            if k in extracted_fields and extracted_fields[k]:
-                full_name = str(extracted_fields[k]).strip()
-                break
-
         id_keys = [
             "National ID Number", "Person / Student ID", "ID / Reference No",
-            "Identity No", "Certificate ID", "CustomerTaxId", "National ID", "CNIC", "ID Number"
+            "Identity No", "Certificate ID", "CustomerTaxId", "National ID", "CNIC",
+            "ID Number", "national_id", "identity_number", "id_number"
         ]
-        national_id = None
-        for k in id_keys:
-            if k in extracted_fields and extracted_fields[k]:
-                national_id = str(extracted_fields[k]).strip()
-                break
+        full_name = self._find_field(extracted_fields, name_keys)
+        national_id = self._find_field(extracted_fields, id_keys)
 
         # Check in OCR text lines
         if not full_name:
             for line in extracted_text.splitlines():
                 line_clean = line.strip()
-                for prefix in ["name:", "depositor:", "recipient:", "applicant:", "student:"]:
+                for prefix in ["name:", "full name:", "depositor:", "recipient:", "applicant:", "student:"]:
                     if line_clean.lower().startswith(prefix):
                         parts = line_clean.split(":", 1)
                         if len(parts) > 1 and parts[1].strip():
@@ -590,18 +660,6 @@ class ContentUnderstandingService:
                             break
                 if full_name:
                     break
-
-        # Fallback based on filename or realistic generator
-        if not full_name:
-            clean_stem = filename.replace("_", " ").replace("-", " ")
-            clean_words = [w.capitalize() for w in clean_stem.split() if w.lower() not in ["doc", "scan", "voucher", "id", "front", "back", "img", "image", "photo", "jpg", "png", "jpeg"]]
-            if len(clean_words) >= 2:
-                full_name = f"{clean_words[0]} {clean_words[1]}"
-            else:
-                full_name = "Sarah Jenkins"
-
-        if not national_id:
-            national_id = f"42101-{abs(hash(full_name)) % 10000000:07d}-1"
 
         cat_lower = category.lower()
         if "student" in cat_lower or "voucher" in cat_lower or "challan" in cat_lower or "fee" in cat_lower:
@@ -611,22 +669,24 @@ class ContentUnderstandingService:
         elif "doctor" in cat_lower or "nurse" in cat_lower or "medical" in cat_lower:
             person_type = "Doctor"
         else:
-            person_type = "Applicant"
+            person_type = None
 
-        dob = extracted_fields.get("Date of Birth") or extracted_fields.get("DOB") or "2000-08-16"
-        email = extracted_fields.get("Email") or f"{full_name.lower().replace(' ', '.')}@example.com"
-        phone = extracted_fields.get("Phone") or "+1 (555) 345-6789"
-        address = extracted_fields.get("Address") or "Auto-extracted from official scanned document"
+        def extracted_or_context(keys: list[str], context_key: str) -> Any:
+            value = self._find_field(extracted_fields, keys)
+            if value not in (None, ""):
+                return value
+            return (person_context or {}).get(context_key)
 
         return {
-            "full_name": full_name,
-            "national_id": national_id,
-            "person_type": person_type,
-            "date_of_birth": dob,
-            "email": email,
-            "phone": phone,
-            "address": address,
-            "confidence": 0.95
+            "full_name": extracted_or_context(name_keys, "full_name"),
+            "national_id": extracted_or_context(id_keys, "national_id"),
+            "person_type": (person_context or {}).get("person_type") or person_type,
+            "date_of_birth": extracted_or_context(
+                ["Date of Birth", "DOB", "Birth Date", "date_of_birth", "birthdate"], "date_of_birth"
+            ),
+            "email": extracted_or_context(["Email", "Email Address", "email_address"], "email"),
+            "phone": extracted_or_context(["Phone", "Phone Number", "Telephone", "phone_number"], "phone"),
+            "address": extracted_or_context(["Address", "Residential Address", "address"], "address"),
         }
 
     def get_status(self) -> dict:
