@@ -157,7 +157,8 @@ async def create_person_with_batch_documents(
             file_bytes=file_bytes,
             filename=file.filename,
             category=category,
-            person_context=person_context
+            person_context=person_context,
+            file_url=storage_ref if storage_ref.startswith("http") else None
         )
 
         doc_analysis = DocumentAnalysis(

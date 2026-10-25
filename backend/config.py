@@ -26,8 +26,8 @@ class Settings:
     APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY", "dev-secret-key-change-in-production")
 
     # 1. Azure SQL Server Configuration
-    AZURE_SQL_SERVER: Optional[str] = os.getenv("AZURE_SQL_SERVER")
-    AZURE_SQL_DATABASE: Optional[str] = os.getenv("AZURE_SQL_DATABASE", "docscan_db")
+    AZURE_SQL_SERVER: Optional[str] = os.getenv("AZURE_SQL_SERVER", "ai103server.database.windows.net")
+    AZURE_SQL_DATABASE: Optional[str] = os.getenv("AZURE_SQL_DATABASE", "AI103")
     AZURE_SQL_USER: Optional[str] = os.getenv("AZURE_SQL_USER")
     AZURE_SQL_PASSWORD: Optional[str] = os.getenv("AZURE_SQL_PASSWORD")
     AZURE_SQL_PORT: int = int(os.getenv("AZURE_SQL_PORT", "1433"))
@@ -42,10 +42,20 @@ class Settings:
     FALLBACK_TO_LOCAL_STORAGE: bool = os.getenv("FALLBACK_TO_LOCAL_STORAGE", "True").lower() in ("true", "1", "yes")
     LOCAL_STORAGE_DIR: Path = BASE_DIR / "storage_local"
 
-    # 3. Azure Content Understanding / Document Intelligence
-    AZURE_CONTENT_UNDERSTANDING_ENDPOINT: Optional[str] = os.getenv("AZURE_CONTENT_UNDERSTANDING_ENDPOINT")
+    # 3. Azure Content Understanding Service
+    AZURE_CONTENT_UNDERSTANDING_ENDPOINT: str = os.getenv(
+        "AZURE_CONTENT_UNDERSTANDING_ENDPOINT",
+        "https://honan121314-1405-resource.services.ai.azure.com/"
+    )
     AZURE_CONTENT_UNDERSTANDING_KEY: Optional[str] = os.getenv("AZURE_CONTENT_UNDERSTANDING_KEY")
-    AZURE_CONTENT_UNDERSTANDING_API_VERSION: str = os.getenv("AZURE_CONTENT_UNDERSTANDING_API_VERSION", "2024-11-30-preview")
+    AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID: str = os.getenv(
+        "AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID",
+        "invoice_analyzer"
+    )
+    AZURE_CONTENT_UNDERSTANDING_API_VERSION: str = os.getenv(
+        "AZURE_CONTENT_UNDERSTANDING_API_VERSION",
+        "2025-11-01"
+    )
 
     AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT: Optional[str] = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
     AZURE_DOCUMENT_INTELLIGENCE_KEY: Optional[str] = os.getenv("AZURE_DOCUMENT_INTELLIGENCE_KEY")
@@ -72,7 +82,10 @@ class Settings:
 
     @classmethod
     def is_azure_content_understanding_configured(cls) -> bool:
-        if cls.AZURE_CONTENT_UNDERSTANDING_ENDPOINT and cls.AZURE_CONTENT_UNDERSTANDING_KEY:
+        if cls.AZURE_CONTENT_UNDERSTANDING_ENDPOINT:
+            if cls.AZURE_CONTENT_UNDERSTANDING_KEY and not cls.AZURE_CONTENT_UNDERSTANDING_KEY.startswith("{{"):
+                return True
+            # Even without a key, DefaultAzureCredential is supported
             return True
         if cls.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and cls.AZURE_DOCUMENT_INTELLIGENCE_KEY:
             return True

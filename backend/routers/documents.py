@@ -92,7 +92,8 @@ async def upload_batch_documents(
             file_bytes=file_bytes,
             filename=file.filename,
             category=category,
-            person_context=person_context
+            person_context=person_context,
+            file_url=storage_ref if storage_ref.startswith("http") else None
         )
 
         doc_analysis = DocumentAnalysis(
@@ -211,7 +212,8 @@ def reanalyze_document(document_id: int, db: Session = Depends(get_db)):
         file_bytes=file_bytes,
         filename=document.original_filename,
         category=document.doc_category,
-        person_context=person_context
+        person_context=person_context,
+        file_url=document.storage_reference if document.storage_reference.startswith("http") else None
     )
 
     doc_analysis = db.query(DocumentAnalysis).filter(DocumentAnalysis.document_id == document.id).first()
