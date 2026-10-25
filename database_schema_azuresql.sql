@@ -106,7 +106,7 @@ BEGIN
         findings NVARCHAR(MAX) NOT NULL,
         compliance_status NVARCHAR(50) NOT NULL, -- 'Compliant', 'Issues Found', 'Missing Documents'
         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-        CONSTRAINT fk_audit_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+        CONSTRAINT fk_audit_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE NO ACTION,
         CONSTRAINT fk_audit_person FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
     );
     CREATE INDEX idx_audit_person_id ON agent_audit_logs(person_id);

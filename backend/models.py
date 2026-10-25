@@ -128,7 +128,7 @@ class AgentAuditLog(Base):
     __tablename__ = "agent_audit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="NO ACTION"), nullable=True)
     person_id = Column(Integer, ForeignKey("persons.id", ondelete="CASCADE"), nullable=True, index=True)
     audit_type = Column(String(100), nullable=False)
     findings = Column(Text, nullable=False)
