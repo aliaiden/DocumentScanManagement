@@ -1,187 +1,193 @@
-# DocuScan AI - Document Scan & Verification AI Agent Web App
+# DocuScan AI — Document Scan Management
 
-An intelligent AI Agent web application for managing document-intensive projects, persons, and batch picture uploads of scanned documents (handwritten or printed, hand-signed, stamped, fee vouchers, certificates, ID documents, and mobile phone camera photos).
-
-Built with **FastAPI**, **Azure SQL Server**, **Azure Account Storage Service (Blob Storage)**, and **Azure Content Understanding / Document Intelligence**, complete with an embedded conversational verification agent.
+An AI-powered web application that organizes document scanning by project. Upload batches of scanned documents (mobile camera photos, fee vouchers, certificates, handwritten notes, ID cards, stamped forms) and **Azure Content Understanding automatically extracts person identity details** — name, national ID, date of birth, address, phone — directly from the document images. No manual person-info form is required. All data is persisted in **Azure SQL Server** and images are stored in **Azure Blob Storage**.
 
 ---
 
-## 🌟 Key Features
+## Tech Stack
 
-### 1. Projects Management (CRUD)
-- **Create, Read, Edit, and Delete Projects**:
-  - Each project has a **Title**, **Description**, and custom **Types of People** it manages (e.g. *Student*, *Applicant*, *Employee*, *Doctor*, *Vendor*, *Patient*).
-  - Configurable person categories define the forms and verification rules per project.
-  - Cascade deletion cleans up associated person records, database references, and Azure storage blobs.
-
-### 2. Person Registration with Batch Document Pictures / Scans
-- **Combined Registration Form**:
-  - Person basic info: Full Name, National ID / CNIC / Passport, Email, Phone, Date of Birth, Address, and Notes.
-  - **Batch Scanned Documents Uploader**:
-    - Direct **Mobile Phone Camera Capture** support (`capture="environment"` attribute opens the native mobile camera instantly on smartphones).
-    - Multi-file drag-and-drop or gallery browse.
-    - Automatic classification tagging (Fee Voucher, ID Document, Certificate, Handwritten Note, Stamped Form, Receipt, Other).
-    - Staged preview thumbnails with category selection and file sizes.
-
-### 3. Azure Account Storage Service (Blob Storage)
-- Securely uploads batch pictures/scans to an Azure Blob container (`scanned-documents`).
-- Generates and stores **storage references** in the database.
-- Streams and fetches saved batch images on demand with high-resolution viewing.
-- Automatic fallback to local disk storage (`storage_local/`) when developing offline or before Azure credentials are provided.
-
-### 4. Azure Content Understanding & Document Intelligence
-- Analyzes each uploaded picture or mobile camera scan:
-  - **Signature Detection**: Identifies whether the document is signed or unsigned.
-  - **Official Stamp & Seal Detection**: Detects official bank stamps, cashier stamps, and notary seals.
-  - **Handwritten vs Printed Analysis**: Computes the percentage of handwriting (e.g., 85% handwritten letter vs printed voucher).
-  - **Structured Key-Value Extraction**: Extracts field pairs (e.g. Voucher Number, Amount Paid, Bank Branch, Attestation Status, National ID, Issue Date).
-  - **Full OCR Stream**: Clean extracted text with one-click copy.
-  - **90° Image Rotation**: Easily rotate phone photos taken in landscape or upside down.
-  - Built-in intelligent heuristic engine provides instant realistic analysis when Azure keys are being provisioned.
-
-### 5. Azure SQL Server Database
-- Relational schema with foreign keys, indexes, and cascade integrity:
-  - `projects`: Title, description, allowed person types, timestamps.
-  - `persons`: Profile metadata, project association, contact details.
-  - `documents`: File metadata, original filename, category, Azure blob name, and **storage reference**.
-  - `document_analyses`: Azure Content Understanding extraction results, stamps, signatures, and OCR text.
-  - `agent_audit_logs`: Audit trail and compliance findings.
-- Standalone DDL script provided in `database_schema_azuresql.sql`.
-- Transparent fallback to SQLite for local development when Azure SQL Server is unconfigured or unreachable.
-
-### 6. Embedded AI Agent Assistant
-- Floating slide-over assistant drawer in the web app:
-  - **Dossier Audit**: Audits a person's documents against expected types for their role, verifies stamps & signatures, and flags missing files.
-  - **Cross-check Verification**: Cross-references names and ID numbers from OCR text with form records in Azure SQL.
-  - **Conversational Q&A**: Ask natural language questions like:
-    - *"Did Sarah Jenkins pay her fee voucher?"*
-    - *"Are there any missing stamps or signatures in this project?"*
-    - *"Show project compliance score"*
+| Layer | Technology |
+|---|---|
+| **Backend** | Python 3.12, FastAPI, Uvicorn |
+| **ORM / Database** | SQLAlchemy 2, Azure SQL Server (MSSQL via pyodbc / pymssql) |
+| **AI / Document Analysis** | Azure Content Understanding REST API (2025-11-01) |
+| **Cloud Storage** | Azure Account Storage Service (Blob Storage) |
+| **Frontend** | Vanilla JS, Tailwind CSS (CDN), Lucide Icons |
+| **API Standard** | OpenAPI v3 (auto-generated Swagger UI at `/docs`) |
+| **Configuration** | python-dotenv, `.env` file (git-ignored) |
 
 ---
 
-## 🔒 Security & Sensitive Values Management
+## Quick Start
 
-All database credentials, endpoints, keys, and connection strings are **strictly kept out of git tracking**:
-- `.gitignore` explicitly excludes `.env`, `storage_local/`, `app_data.db`, and all secret configuration files.
-- `.env.example` is provided with clean placeholder templates and guidance.
-- System status APIs and UI modals mask sensitive keys (e.g., `DefaultEndpoints...==` displays as `Defa...ey==`).
+### 1. Clone the repository
 
----
-
-## 🚀 Quick Start Guide
-
-### 1. Prerequisites
-- Python 3.10+
-- (Optional) Azure Subscription for Azure SQL, Blob Storage, and Content Understanding.
-
-### 2. Installation
-Clone the repository and install dependencies:
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/aliaiden/DocumentScanManagement.git
 cd DocumentScanManagement
-
-# Optional: Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install requirements
-pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
-Copy the `.env.example` template to `.env`:
+### 2. Configure environment variables
+
 ```bash
 cp .env.example .env
 ```
-Fill in your Azure credentials in `.env` (or leave as defaults to run in local development mode):
+
+Edit `.env` and fill in your credentials:
+
 ```env
 # Azure SQL Server
-AZURE_SQL_SERVER=your-azure-sql.database.windows.net
-AZURE_SQL_DATABASE=docscan_db
-AZURE_SQL_USER=sqladmin
-AZURE_SQL_PASSWORD=YourSecurePassword123!
+AZURE_SQL_SERVER=your-server.database.windows.net
+AZURE_SQL_DATABASE=YourDatabase
+AZURE_SQL_USER=your_sql_user
+AZURE_SQL_PASSWORD=your_sql_password
 
 # Azure Blob Storage
-AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=yourstorage;AccountKey=yourkey==;EndpointSuffix=core.windows.net
-AZURE_STORAGE_CONTAINER_NAME=scanned-documents
+AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...
+AZURE_STORAGE_CONTAINER_NAME=documents
 
-# Azure Content Understanding / Document Intelligence
-AZURE_CONTENT_UNDERSTANDING_ENDPOINT=https://your-resource.cognitiveservices.azure.com/
-AZURE_CONTENT_UNDERSTANDING_KEY=your_key_here
+# Azure Content Understanding
+AZURE_CONTENT_UNDERSTANDING_ENDPOINT=https://your-resource.services.ai.azure.com/
+AZURE_CONTENT_UNDERSTANDING_KEY=your_api_key
+AZURE_CONTENT_UNDERSTANDING_ANALYZER_ID=invoice_analyzer
+AZURE_CONTENT_UNDERSTANDING_API_VERSION=2025-11-01
 ```
 
-### 4. Run the Web Application
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+> **Note:** MSSQL connectivity requires the ODBC Driver for SQL Server. On macOS: `brew install msodbcsql18`
+
+### 4. Run the application
+
 ```bash
 python3 run.py
 ```
-Open your browser at **[http://localhost:8000](http://localhost:8000)**.
+
+The app starts at **http://localhost:8000**
+
+- **Web UI** → http://localhost:8000
+- **Swagger UI (OpenAPI v3)** → http://localhost:8000/docs
+- **ReDoc** → http://localhost:8000/redoc
 
 ---
 
-## ☁️ Azure Cloud Services Setup
+## API Endpoints
 
-### A. Azure SQL Server
-1. Create an **Azure SQL Database** in the Azure Portal.
-2. In **Networking**, ensure "Allow Azure services and resources to access this server" is enabled, and add your client IP address to the firewall rules.
-3. (Optional) Run `database_schema_azuresql.sql` in Azure Query Editor or Azure Data Studio to pre-create tables with custom indexes.
+### Projects
 
-### B. Azure Account Storage (Blob)
-1. Create a **Storage Account** (Standard General-purpose v2).
-2. Create a container named `scanned-documents` with Blob access level.
-3. Under **Access keys**, copy the Connection String and set `AZURE_STORAGE_CONNECTION_STRING` in `.env`.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/projects` | List all projects |
+| `POST` | `/api/projects` | Create a new project |
+| `GET` | `/api/projects/{id}` | Get project with persons |
+| `PUT` | `/api/projects/{id}` | Update project |
+| `DELETE` | `/api/projects/{id}` | Delete project and all data |
 
-### C. Azure Content Understanding / Document Intelligence
-1. Create an **Azure AI Document Intelligence** or **Azure AI Content Understanding** resource.
-2. Under **Keys and Endpoint**, copy the Endpoint URL and Key 1 into `AZURE_CONTENT_UNDERSTANDING_ENDPOINT` and `AZURE_CONTENT_UNDERSTANDING_KEY`.
+### Persons & Document Scanning
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/projects/{id}/scan` | **Upload scans → auto-extract person via Azure AI** |
+| `POST` | `/api/projects/{id}/persons` | Same as `/scan` (backward-compat alias) |
+| `GET` | `/api/projects/{id}/persons` | List persons in project |
+| `GET` | `/api/persons/{id}` | Get person dossier with all scans |
+| `PUT` | `/api/persons/{id}` | Update person details |
+| `DELETE` | `/api/persons/{id}` | Delete person and all scans |
 
-## 🧪 Running Automated Tests
+### Documents
 
-Run the test suite with Python's built-in `unittest`:
-```bash
-python3 -m unittest discover tests
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/documents/batch/{person_id}` | Upload additional scans to existing person |
+| `GET` | `/api/documents/{id}` | Get document metadata |
+| `GET` | `/api/documents/{id}/file` | Stream document image from Azure Storage |
+| `POST` | `/api/documents/{id}/reanalyze` | Re-analyze with Azure Content Understanding |
+| `DELETE` | `/api/documents/{id}` | Delete document from SQL and Azure Storage |
+
+### Azure Content Understanding (OpenAPI v3 — for external integrations)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/content-understanding/analyze` | Analyze a document file or URL; returns extracted person details, OCR text, stamps, signatures |
+| `GET` | `/api/content-understanding/info` | Returns active analyzer endpoint, ID, API version, and supported analyzers |
+
+#### `POST /api/content-understanding/analyze`
+
+**Request** (multipart/form-data):
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `file` | File | One of | Document image (JPEG, PNG, PDF) |
+| `file_url` | string | One of | Public URL to a document image |
+| `analyzer_id` | string | No | Override analyzer (default: `invoice_analyzer`) |
+| `category` | string | No | Category hint (e.g. `ID Document`, `Fee Voucher`) |
+
+**Response** (`application/json`):
+
+```json
+{
+  "status": "completed",
+  "detected_type": "National Identification Document",
+  "has_signature": true,
+  "has_stamp": false,
+  "is_handwritten": false,
+  "handwritten_percentage": 3.5,
+  "confidence_score": 0.97,
+  "extracted_text": "IDENTITY DOCUMENT\nName: Sarah Jenkins\nNational ID: 42201-...",
+  "extracted_fields": {
+    "Full Name": "Sarah Jenkins",
+    "National ID Number": "42201-9876543-2",
+    "Date of Birth": "2002-09-14"
+  },
+  "extracted_person": {
+    "full_name": "Sarah Jenkins",
+    "national_id": "42201-9876543-2",
+    "person_type": "Applicant",
+    "date_of_birth": "2002-09-14",
+    "email": null,
+    "phone": null,
+    "address": null,
+    "confidence": 0.97
+  },
+  "analysis_raw": {}
+}
 ```
-All CRUD operations, multipart batch document uploads, Azure storage references, and AI agent endpoints are tested automatically.
 
----
+#### `GET /api/content-understanding/info`
 
-## 📁 Project Architecture
+**Response**:
 
+```json
+{
+  "endpoint": "https://honan121314-1405-resource.services.ai.azure.com/",
+  "analyzer_id": "invoice_analyzer",
+  "api_version": "2025-11-01",
+  "supported_analyzers": [
+    "invoice_analyzer",
+    "prebuilt-layout",
+    "prebuilt-idDocument",
+    "prebuilt-receipt",
+    "prebuilt-document"
+  ],
+  "key_configured": true
+}
 ```
-DocumentScanManagement/
-├── .gitignore                          # Excludes .env, local storage, DB, caches
-├── .env.example                        # Template for Azure credentials
-├── database_schema_azuresql.sql        # Azure SQL Server T-SQL DDL script
-├── requirements.txt                    # Python dependencies
-├── run.py                              # Web application launcher
-│
-├── backend/
-│   ├── config.py                       # Safe settings loader with secret masking
-│   ├── database.py                     # Azure SQL & SQLite connection manager
-│   ├── models.py                       # SQLAlchemy models (Project, Person, Document, Analysis)
-│   ├── schemas.py                      # Pydantic schemas for serialization
-│   ├── main.py                         # FastAPI application entrypoint & static mount
-│   │
-│   ├── services/
-│   │   ├── storage_service.py          # Azure Blob Storage client + local fallback
-│   │   ├── content_understanding_service.py # Azure Content Understanding & OCR engine
-│   │   └── ai_agent_service.py         # AI Agent reasoning, audits & conversational Q&A
-│   │
-│   └── routers/
-│       ├── projects.py                 # Project CRUD endpoints
-│       ├── persons.py                  # Person + batch scan uploader endpoints
-│       ├── documents.py                # Batch image streaming, re-analysis & deletion
-│       ├── agent.py                    # AI chat and audit endpoints
-│       └── system.py                   # Cloud status & connectivity healthcheck
-│
-├── frontend/
-│   ├── index.html                      # Single-page modern UI with camera capture
-│   └── static/
-│       ├── css/style.css               # Custom responsive styles & animations
-│       └── js/app.js                   # Client state, modals, batch uploader, AI drawer
-│
-└── tests/
-    └── test_api.py                     # Full end-to-end automated test suite
-```
+
+### AI Agent
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/agent/chat` | Chat with the AI document audit agent |
+| `GET` | `/api/agent/audit/person/{id}` | AI compliance audit for a person |
+| `GET` | `/api/agent/audit/project/{id}` | AI health audit for a project |
+
+### System
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/system/status` | Azure cloud connectivity status (SQL, Storage, Content Understanding) |
+| `GET` | `/api/system/health` | Basic health check |

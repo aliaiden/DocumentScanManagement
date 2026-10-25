@@ -19,7 +19,8 @@ from backend.routers import (
     persons_router,
     documents_router,
     agent_router,
-    system_router
+    system_router,
+    content_understanding_router
 )
 
 # Configure logging
@@ -206,9 +207,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Document Scan & Management AI Agent",
-    description="AI Agent Web Application for Projects, Persons, Mobile Camera Document Scans, Azure Storage & Azure Content Understanding.",
+    title="DocuScan AI — Document Scan Management",
+    description=(
+        "AI-powered document scan management system. Organizes projects, auto-extracts person details "
+        "from uploaded scanned documents using Azure Content Understanding, stores images in Azure Blob Storage, "
+        "and persists structured data in Azure SQL Server. Exposes OpenAPI v3 standard endpoints for external integration."
+    ),
     version="1.0.0",
+    openapi_tags=[
+        {"name": "Projects", "description": "Create, read, update, and delete document management projects."},
+        {"name": "Persons", "description": "Scan and auto-enroll persons by uploading document batches — person details are extracted by AI."},
+        {"name": "Documents", "description": "Individual scanned document management, batch upload, and re-analysis."},
+        {"name": "Azure Content Understanding", "description": "Standalone OpenAPI v3 endpoints for analyzing documents with Azure AI Content Understanding."},
+        {"name": "AI Agent", "description": "Conversational AI agent for cross-document auditing and Q&A."},
+        {"name": "System", "description": "Service health checks and Azure cloud connectivity status."},
+    ],
     lifespan=lifespan
 )
 
@@ -227,6 +240,7 @@ app.include_router(persons_router)
 app.include_router(documents_router)
 app.include_router(agent_router)
 app.include_router(system_router)
+app.include_router(content_understanding_router)
 
 # Mount Static Assets
 static_dir = FRONTEND_DIR / "static"

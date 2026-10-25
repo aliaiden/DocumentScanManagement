@@ -123,6 +123,17 @@ class DocumentAnalysis(Base):
     def extracted_fields(self, data: dict):
         self.extracted_fields_raw = json.dumps(data)
 
+    @property
+    def extracted_person(self) -> dict:
+        fields = self.extracted_fields
+        return fields.get("extracted_person", {})
+
+    @extracted_person.setter
+    def extracted_person(self, person_dict: dict):
+        fields = self.extracted_fields
+        fields["extracted_person"] = person_dict
+        self.extracted_fields = fields
+
 
 class AgentAuditLog(Base):
     __tablename__ = "agent_audit_logs"

@@ -10,8 +10,19 @@ from pydantic import BaseModel, Field, ConfigDict
 # ==============================================================================
 # Document & Analysis Schemas
 # ==============================================================================
+class ExtractedPersonOut(BaseModel):
+    full_name: Optional[str] = Field(None, description="Auto-extracted person name from document")
+    national_id: Optional[str] = Field(None, description="National ID / CNIC / Identifier detected in scan")
+    person_type: Optional[str] = Field(None, description="Inferred or assigned person role/category")
+    date_of_birth: Optional[str] = Field(None, description="Date of birth detected from document")
+    email: Optional[str] = Field(None, description="Email detected on document")
+    phone: Optional[str] = Field(None, description="Phone number detected on document")
+    address: Optional[str] = Field(None, description="Physical address detected on document")
+    confidence: Optional[float] = Field(0.95, description="Extraction confidence score (0 to 1)")
+
+
 class DocumentAnalysisBase(BaseModel):
-    status: str = "pending"
+    status: str = "completed"
     has_signature: bool = False
     has_stamp: bool = False
     is_handwritten: bool = False
@@ -20,6 +31,7 @@ class DocumentAnalysisBase(BaseModel):
     confidence_score: float = 0.0
     extracted_text: Optional[str] = None
     extracted_fields: Dict[str, Any] = Field(default_factory=dict)
+    extracted_person: Optional[ExtractedPersonOut] = None
 
 
 class DocumentAnalysisOut(DocumentAnalysisBase):
@@ -178,3 +190,26 @@ class SystemStatusOut(BaseModel):
     storage: ServiceStatus
     content_understanding: ServiceStatus
     ai_agent: ServiceStatus
+
+
+# ==============================================================================
+# OpenAPI Content Understanding API Schemas
+# ==============================================================================
+class ContentUnderstandingAnalyzeRequest(BaseModel):
+    file_url: Optional[str] = Field(None, description="Publicly accessible HTTP URL of the document/image to analyze")
+    analyzer_id: Optional[str] = Field("invoice_analyzer", description="Azure Content Understanding analyzer ID (e.g. invoice_analyzer)")
+    category: Optional[str] = Field("Other", description="Document category hint (e.g. ID Document, Fee Voucher, Certificate)")
+
+
+class ContentUnderstandingAnalyzeResponse(BaseModel):
+    status: str = Field("completed", description="Analysis status: completed or failed")
+    detected_type: str = Field("Scanned Document", description="Document category detected by Azure Content Understanding")
+    has_signature: bool = Field(False, description="Whether authorized hand signature was detected")
+    has_stamp: bool = Field(False, description="Whether official stamp/seal was detected")
+    is_handwritten: bool = Field(False, description="Whether handwritten content was detected")
+    handwritten_percentage: float = Field(0.0, description="Percentage of document containing handwriting")
+    confidence_score: float = Field(0.95, description="Overall extraction confidence score (0 to 1)")
+    extracted_text: str = Field("", description="Full OCR extracted text")
+    extracted_fields: Dict[str, Any] = Field(default_factory=dict, description="Key-value pairs extracted by Azure Content Understanding")
+    extracted_person: ExtractedPersonOut = Field(default_factory=ExtractedPersonOut, description="Person information auto-extracted from document scan")
+    analysis_raw: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Raw Azure Content Understanding payload metadata")

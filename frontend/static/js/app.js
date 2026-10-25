@@ -577,7 +577,7 @@ class DocuScanApp {
   }
 
   // ============================================================================
-  // Add Person Modal with Batch Document Pictures / Scans
+  // Add Person Modal — Upload Scans Only (person details auto-extracted by AI)
   // ============================================================================
   openAddPersonModal() {
     const modal = document.getElementById("modal-person");
@@ -592,13 +592,9 @@ class DocuScanApp {
     const types = this.currentProject.person_types || ["General"];
     select.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join("");
 
-    // Reset inputs
-    document.getElementById("person-form-name").value = "";
-    document.getElementById("person-form-national-id").value = "";
-    document.getElementById("person-form-email").value = "";
-    document.getElementById("person-form-phone").value = "";
-    document.getElementById("person-form-dob").value = "";
-    document.getElementById("person-form-address").value = "";
+    // Reset optional fields
+    const notesEl = document.getElementById("person-form-notes");
+    if (notesEl) notesEl.value = "";
     document.getElementById("person-save-status").innerText = "";
 
     modal.classList.remove("hidden");
@@ -702,20 +698,22 @@ class DocuScanApp {
     event.preventDefault();
     if (!this.currentProject) return;
 
+    if (this.stagedFiles.length === 0) {
+      this.showToast("Please upload at least one scanned document image.", true);
+      return;
+    }
+
     const btn = document.getElementById("btn-save-person");
     const statusText = document.getElementById("person-save-status");
     btn.disabled = true;
-    btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> Uploading to Azure...`;
-    statusText.innerText = "Storing record in Azure SQL & uploading images to Azure Storage...";
+    btn.innerHTML = `<span class="animate-spin mr-1">⏳</span> Scanning & Extracting...`;
+    statusText.innerText = "Azure Content Understanding is analyzing documents and extracting person details...";
 
     const formData = new FormData();
-    formData.append("full_name", document.getElementById("person-form-name").value.trim());
+    // Only pass person_type and optional notes — all other details extracted from docs
     formData.append("person_type", document.getElementById("person-form-type").value);
-    formData.append("national_id", document.getElementById("person-form-national-id").value.trim());
-    formData.append("email", document.getElementById("person-form-email").value.trim());
-    formData.append("phone", document.getElementById("person-form-phone").value.trim());
-    formData.append("date_of_birth", document.getElementById("person-form-dob").value);
-    formData.append("address", document.getElementById("person-form-address").value.trim());
+    const notes = document.getElementById("person-form-notes")?.value?.trim();
+    if (notes) formData.append("notes", notes);
 
     // Batch images and categories
     const categoriesList = [];
@@ -726,7 +724,7 @@ class DocuScanApp {
     formData.append("categories_json", JSON.stringify(categoriesList));
 
     try {
-      const res = await fetch(`/api/projects/${this.currentProject.id}/persons`, {
+      const res = await fetch(`/api/projects/${this.currentProject.id}/scan`, {
         method: "POST",
         body: formData
       });
@@ -734,12 +732,13 @@ class DocuScanApp {
       if (res.ok) {
         const createdPerson = await res.json();
         this.closeAddPersonModal();
-        this.showToast(`Person ${createdPerson.full_name} and batch scans saved!`);
+        const name = createdPerson.full_name || "Person";
+        this.showToast(`✅ ${name} enrolled — person details extracted by Azure AI!`);
         // Refresh project details
         await this.showProjectDetail(this.currentProject.id);
       } else {
         const err = await res.json();
-        this.showToast(err.detail || "Error saving person", true);
+        this.showToast(err.detail || "Error processing scans", true);
         statusText.innerText = err.detail || "Error occurred";
       }
     } catch (e) {
@@ -747,7 +746,7 @@ class DocuScanApp {
       statusText.innerText = "Network error";
     } finally {
       btn.disabled = false;
-      btn.innerHTML = `<i data-lucide="cloud-upload" class="w-4 h-4"></i><span>Save & Upload Batch</span>`;
+      btn.innerHTML = `<i data-lucide="cloud-upload" class="w-4 h-4"></i><span>Scan &amp; Auto-Extract</span>`;
       this.initLucide();
     }
   }
@@ -778,21 +777,53 @@ class DocuScanApp {
     if (!this.currentPerson) return;
 
     const p = this.currentPerson;
-    document.getElementById("dossier-back-label").innerText = this.currentProject ? this.currentProject.title : "Back to Project";
-    document.getElementById("dossier-name-crumb").innerText = p.full_name;
-    document.getElementById("dossier-avatar").innerText = p.full_name.charAt(0).toUpperCase();
-    document.getElementById("dossier-full-name").innerText = p.full_name;
-    document.getElementById("dossier-person-type").innerText = p.person_type;
-    document.getElementById("dossier-national-id").innerText = p.national_id ? `ID: ${p.national_id}` : "No National ID";
-    document.getElementById("dossier-email").innerText = p.email || "No email";
-    document.getElementById("dossier-phone").innerText = p.phone || "No phone";
+    const displayName = p.full_name && p.full_name !== "Unknown Person" ? p.full_name : "Auto-Extracted Person";
 
-    // Extra details
+    document.getElementById("dossier-back-label").innerText = this.currentProject ? this.currentProject.title : "Back to Project";
+    document.getElementById("dossier-name-crumb").innerText = displayName;
+    document.getElementById("dossier-avatar").innerText = displayName.charAt(0).toUpperCase();
+    document.getElementById("dossier-full-name").innerText = displayName;
+    document.getElementById("dossier-person-type").innerText = p.person_type;
+    document.getElementById("dossier-national-id").innerText = p.national_id ? `ID: ${p.national_id}` : "ID: Extracting from docs...";
+    document.getElementById("dossier-email").innerText = p.email || "—";
+    document.getElementById("dossier-phone").innerText = p.phone || "—";
+
+    // Extra details — show AI-extracted info panel
     const extraCont = document.getElementById("dossier-extra-info");
+
+    // Gather extracted person data from the latest doc's analysis if person fields are sparse
+    let extractedPerson = null;
+    if (p.documents && p.documents.length > 0) {
+      for (const doc of p.documents) {
+        if (doc.analysis && doc.analysis.extracted_fields && doc.analysis.extracted_fields.extracted_person) {
+          extractedPerson = doc.analysis.extracted_fields.extracted_person;
+          break;
+        }
+      }
+    }
+
+    const aiInfoHtml = extractedPerson ? `
+      <div class="mt-4 pt-3 border-t border-slate-800 w-full">
+        <div class="flex items-center space-x-1.5 mb-2">
+          <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400">🤖 Azure AI Extracted Details</span>
+          ${extractedPerson.confidence ? `<span class="text-[10px] text-slate-500">(${Math.round(extractedPerson.confidence * 100)}% confidence)</span>` : ''}
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+          ${extractedPerson.full_name ? `<div><span class="text-slate-400">Name:</span> <span class="text-white font-medium">${extractedPerson.full_name}</span></div>` : ''}
+          ${extractedPerson.national_id ? `<div><span class="text-slate-400">National ID:</span> <span class="text-white font-medium">${extractedPerson.national_id}</span></div>` : ''}
+          ${extractedPerson.date_of_birth ? `<div><span class="text-slate-400">Date of Birth:</span> <span class="text-white font-medium">${extractedPerson.date_of_birth}</span></div>` : ''}
+          ${extractedPerson.email ? `<div><span class="text-slate-400">Email:</span> <span class="text-white font-medium">${extractedPerson.email}</span></div>` : ''}
+          ${extractedPerson.phone ? `<div><span class="text-slate-400">Phone:</span> <span class="text-white font-medium">${extractedPerson.phone}</span></div>` : ''}
+          ${extractedPerson.address ? `<div class="col-span-2"><span class="text-slate-400">Address:</span> <span class="text-white font-medium">${extractedPerson.address}</span></div>` : ''}
+        </div>
+      </div>
+    ` : '';
+
     extraCont.innerHTML = `
       ${p.date_of_birth ? `<div><span class="text-slate-400">Date of Birth:</span> <span class="text-white">${p.date_of_birth}</span></div>` : ''}
       ${p.address ? `<div><span class="text-slate-400">Address / Notes:</span> <span class="text-white">${p.address}</span></div>` : ''}
       <div><span class="text-slate-400">Azure SQL Reference:</span> <span class="text-azure-400 font-mono">Person_ID #${p.id}</span></div>
+      ${aiInfoHtml}
     `;
 
     document.getElementById("dossier-docs-count").innerText = (p.documents || []).length;
@@ -1074,16 +1105,45 @@ class DocuScanApp {
     // Structured Fields Table
     const table = document.getElementById("viewer-fields-table");
     const fields = an.extracted_fields || {};
-    const fieldKeys = Object.keys(fields);
-    if (fieldKeys.length === 0) {
+    // Don't display the nested extracted_person object as a raw field — handled separately
+    const displayFields = Object.entries(fields).filter(([k]) => k !== "extracted_person");
+    if (displayFields.length === 0) {
       table.innerHTML = `<div class="p-3 text-slate-500 italic">No structured key-values detected.</div>`;
     } else {
-      table.innerHTML = fieldKeys.map(k => `
+      table.innerHTML = displayFields.map(([k, v]) => `
         <div class="flex items-start justify-between p-2.5">
           <span class="font-medium text-slate-400">${k}:</span>
-          <span class="font-semibold text-white text-right ml-2">${fields[k]}</span>
+          <span class="font-semibold text-white text-right ml-2">${typeof v === 'object' ? JSON.stringify(v) : v}</span>
         </div>
       `).join("");
+    }
+
+    // Show AI-Extracted Person Info if available
+    const ep = fields.extracted_person;
+    const epSection = document.getElementById("viewer-extracted-person");
+    if (epSection) {
+      if (ep && (ep.full_name || ep.national_id)) {
+        epSection.innerHTML = `
+          <div class="mt-1">
+            <div class="flex items-center space-x-1.5 mb-2">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-indigo-400">🤖 AI-Extracted Person</span>
+              ${ep.confidence ? `<span class="text-[10px] text-slate-500">${Math.round(ep.confidence * 100)}% confidence</span>` : ''}
+            </div>
+            <div class="bg-indigo-950/40 border border-indigo-500/20 rounded-xl p-3 space-y-1 text-xs">
+              ${ep.full_name ? `<div class="flex justify-between"><span class="text-slate-400">Name:</span><span class="text-white font-semibold">${ep.full_name}</span></div>` : ''}
+              ${ep.national_id ? `<div class="flex justify-between"><span class="text-slate-400">National ID:</span><span class="text-white font-semibold">${ep.national_id}</span></div>` : ''}
+              ${ep.date_of_birth ? `<div class="flex justify-between"><span class="text-slate-400">Date of Birth:</span><span class="text-white">${ep.date_of_birth}</span></div>` : ''}
+              ${ep.email ? `<div class="flex justify-between"><span class="text-slate-400">Email:</span><span class="text-white">${ep.email}</span></div>` : ''}
+              ${ep.phone ? `<div class="flex justify-between"><span class="text-slate-400">Phone:</span><span class="text-white">${ep.phone}</span></div>` : ''}
+              ${ep.address ? `<div class="flex justify-between"><span class="text-slate-400">Address:</span><span class="text-white text-right ml-2">${ep.address}</span></div>` : ''}
+            </div>
+          </div>
+        `;
+        epSection.classList.remove("hidden");
+      } else {
+        epSection.innerHTML = "";
+        epSection.classList.add("hidden");
+      }
     }
 
     // OCR Text
