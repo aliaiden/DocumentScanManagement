@@ -1,0 +1,39 @@
+/* Custom App Styles */
+
+/* Custom Smooth Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 120, 212, 0.6);
+}
+
+/* Document Thumbnail Hover Zoom */
+.doc-card-thumb {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.doc-card:hover .doc-card-thumb {
+  transform: scale(1.04);
+}
+
+/* Pulsing badge animation */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.75; transform: scale(0.96); }
+}
+
+.badge-pulse {
+  animation: pulse-soft 2s infinite ease-in-out;
+}

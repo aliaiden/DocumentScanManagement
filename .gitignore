@@ -1,0 +1,42 @@
+# Environment and Sensitive Credentials
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python Bytecode and Caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Local Storage and Uploads (Sensitive user documents)
+storage_local/
+uploads/
+*.db
+*.sqlite3
+app_data.db
+
+# OS Artifacts
+.DS_Store
+Thumbs.db
+
+# IDE and Editor configs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node / Frontend caches (if used)
+node_modules/
+dist/
+build/
